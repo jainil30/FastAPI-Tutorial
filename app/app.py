@@ -6,7 +6,7 @@ from app.db import Post,create_db_and_tables,get_async_session
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-from sqlalchemy import select
+from sqlalchemy import select, result_tuple
 
 from app.images import imagekit
 
@@ -56,24 +56,22 @@ async def upload_file(
 ):
     temp_file_path = None
     try:
-        # Save uploaded file to temp
         suffix = os.path.splitext(file.filename)[1] or ".jpg"  # fallback
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file_path = temp_file.name
             shutil.copyfileobj(file.file, temp_file)
 
-        # Close the UploadFile stream early
+
         await file.close()
 
-        # Upload to Cloudinary (this handles everything securely)
         upload_result = cloudinary.uploader.upload(
             temp_file_path,
-            folder="uploads",  # optional: organizes in your Media Library
+            folder="uploads",
             tags=["backend-upload"],
-            resource_type="auto"  # auto-detects image/video/raw
+            resource_type="auto"
         )
 
-        # Cloudinary returns 200 + JSON on success
+
         post = Post(
             caption=caption,
             url=upload_result["secure_url"],  # HTTPS URL
@@ -93,4 +91,24 @@ async def upload_file(
             try:
                 os.unlink(temp_file_path)
             except PermissionError:
-                pass  # Windows lock - safe to ignore
+                pass
+
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id:str , session: AsyncSession = Depends(get_async_session)):
+    try:
+        post_uuid = uuid.UUID(post_id)
+
+        result = await session.execute(select(Post).where(Post.id == post_uuid))
+        post = result.scalars().one()
+
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        await session.delete(post)
+        await session.commit()
+
+        return {"success": True, "message": "Post Deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+
