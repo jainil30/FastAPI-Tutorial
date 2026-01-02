@@ -33,5 +33,5 @@ async def create_db_and_tables():
 
 
 async def get_async_session() -> AsyncGenerator:
-    async with async_sessionmaker() as session:
+    async with async_session_maker() as session:
         yield session
